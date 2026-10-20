@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NetSol Assistant</title>
+  <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+  <style>
+    /* ---------- THEME: colours live in variables, so switching theme = swapping values ---------- */
+    :root[data-theme="dark"] {
+      --bg: #0b1020; --panel: rgba(255,255,255,0.05); --border: rgba(255,255,255,0.10);
+      --text: #e8ecf5; --muted: #8b95b0; --bot: rgba(255,255,255,0.07);
+      --user: linear-gradient(135deg,#4f7cff,#8a5cff); --code: #060913;
+      --glow1: rgba(79,124,255,0.25); --glow2: rgba(138,92,255,0.20);
+    }
+    :root[data-theme="light"] {
+      --bg: #f3f5fb; --panel: rgba(255,255,255,0.85); --border: rgba(0,0,0,0.08);
+      --text: #1b2236; --muted: #6a7390; --bot: #ffffff;
+      --user: linear-gradient(135deg,#4f7cff,#8a5cff); --code: #1e2433;
+      --glow1: rgba(79,124,255,0.15); --glow2: rgba(138,92,255,0.12);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; height: 100vh; display: flex; justify-content: center;
+      font-family: system-ui, "Segoe UI", Arial, sans-serif; color: var(--text);
+      background: radial-gradient(circle at 15% 10%, var(--glow1), transparent 40%),
+                  radial-gradient(circle at 85% 90%, var(--glow2), transparent 40%), var(--bg);
+    }
+    #app { width: 100%; max-width: 820px; height: 100vh; display: flex; flex-direction: column; padding: 14px; gap: 12px; }
+
+    /* ---------- HEADER ---------- */
+    header {
+      display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;
+      padding: 10px 14px; border: 1px solid var(--border); border-radius: 16px;
+      background: var(--panel); backdrop-filter: blur(12px);
+    }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; }
+    .logo { width: 34px; height: 34px; border-radius: 10px; background: var(--user); display: grid; place-items: center; color: white; font-size: 18px; }
+    .brand small { display: block; font-weight: 400; color: var(--muted); font-size: 11px; }
+    .controls { display: flex; gap: 6px; flex-wrap: wrap; }
+    select, .iconbtn {
+      background: var(--panel); color: var(--text); border: 1px solid var(--border);
+      border-radius: 10px; padding: 7px 10px; font-size: 13px; cursor: pointer;
+    }
+    select option { color: #111; }
+
+    /* ---------- CHAT AREA ---------- */
+    #chat { flex: 1; overflow-y: auto; padding: 6px 4px; display: flex; flex-direction: column; gap: 14px; scroll-behavior: smooth; }
+    .row { display: flex; gap: 10px; align-items: flex-start; animation: pop .25s ease; }
+    .row.user { flex-direction: row-reverse; }
+    @keyframes pop { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+    .avatar { width: 32px; height: 32px; border-radius: 10px; flex: none; display: grid; place-items: center; font-size: 15px; }
+    .row.bot .avatar { background: var(--user); color: white; }
+    .row.user .avatar { background: var(--panel); border: 1px solid var(--border); }
+    .bubble { max-width: 80%; padding: 10px 14px; border-radius: 16px; line-height: 1.55; overflow-wrap: anywhere; position: relative; }
+    .row.bot .bubble { background: var(--bot); border: 1px solid var(--border); border-top-left-radius: 4px; }
+    .row.user .bubble { background: var(--user); color: white; border-top-right-radius: 4px; white-space: pre-wrap; }
+    .content p { margin: 0 0 8px; } .content p:last-child { margin: 0; }
+    .content pre { background: var(--code); color: #e6e6e6; padding: 12px; border-radius: 10px; overflow-x: auto; font-size: 13px; }
+    .content code { font-family: Consolas, monospace; }
+    .content :not(pre) > code { background: rgba(127,127,127,0.2); padding: 1px 5px; border-radius: 5px; }
+    .tools { margin-top: 6px; display: flex; gap: 6px; }
+    .tools button { background: none; border: 1px solid var(--border); color: var(--muted); border-radius: 8px; font-size: 12px; padding: 3px 8px; cursor: pointer; }
+    .tools button:hover { color: var(--text); }
+
+    /* typing dots */
+    .dots span { display: inline-block; width: 7px; height: 7px; margin-right: 4px; border-radius: 50%; background: var(--muted); animation: blink 1.2s infinite; }
+    .dots span:nth-child(2) { animation-delay: .2s; } .dots span:nth-child(3) { animation-delay: .4s; }
+    @keyframes blink { 0%,80%,100% { opacity: .2; } 40% { opacity: 1; } }
+
+    /* ---------- WELCOME SCREEN ---------- */
+    #welcome { margin: auto; text-align: center; padding: 20px; }
+    #welcome .big { width: 64px; height: 64px; font-size: 32px; margin: 0 auto 14px; border-radius: 20px; background: var(--user); display: grid; place-items: center; color: white; }
+    #welcome h1 { margin: 0 0 6px; font-size: 26px; }
+    #welcome p { color: var(--muted); margin: 0 0 20px; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
+    .card { text-align: left; background: var(--panel); border: 1px solid var(--border); color: var(--text); padding: 12px; border-radius: 14px; cursor: pointer; font-size: 14px; transition: transform .15s, border-color .15s; }
+    .card:hover { transform: translateY(-3px); border-color: #4f7cff; }
+    .card b { display: block; margin-bottom: 4px; }
+    .card span { color: var(--muted); font-size: 12px; }
+
+    /* ---------- INPUT BAR ---------- */
+    #inputBar { display: flex; align-items: flex-end; gap: 8px; padding: 8px; border: 1px solid var(--border); border-radius: 18px; background: var(--panel); backdrop-filter: blur(12px); }
+    #input { flex: 1; background: transparent; border: none; outline: none; color: var(--text); font-family: inherit; font-size: 15px; resize: none; max-height: 130px; padding: 8px; }
+    .circle { width: 40px; height: 40px; border-radius: 50%; border: none; cursor: pointer; color: white; font-size: 17px; flex: none; }
+    #sendBtn { background: var(--user); } #sendBtn:disabled { opacity: .4; cursor: not-allowed; }
+    #stopBtn { background: #e5484d; display: none; }
+    #micBtn { background: var(--bot); color: var(--text); border: 1px solid var(--border); }
+    #micBtn.rec { background: #e5484d; color: white; animation: pulse 1.2s infinite; }
+    @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(229,72,77,.6); } 100% { box-shadow: 0 0 0 14px rgba(229,72,77,0); } }
+    #status { text-align: center; font-size: 12px; color: var(--muted); min-height: 14px; }
+  </style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="brand">
+      <div class="logo">✦</div>
+      <div>NetSol Assistant<small>Powered by Groq</small></div>
+    </div>
+    <div class="controls">
+      <select id="persona" title="Personality">
+        <option value="general">🤖 General</option>
+        <option value="onboarding">🎓 Intern Onboarding</option>
+        <option value="coder">💻 Code Mentor</option>
+        <option value="eli5">🧒 Explain Simply</option>
+      </select>
+      <select id="model" title="Model">
+        {% for id, label in models.items() %}
+        <option value="{{ id }}">{{ label }}</option>
+        {% endfor %}
+      </select>
+      <button class="iconbtn" onclick="toggleTheme()" title="Switch theme">🌓</button>
+      <button class="iconbtn" onclick="clearChat()" title="New chat">🗑️</button>
+    </div>
+  </header>
+
+  <div id="chat"></div>
+  <div id="status"></div>
+
+  <div id="inputBar">
+    <button id="micBtn" class="circle" onclick="toggleMic()" title="Voice input">🎤</button>
+    <textarea id="input" rows="1" placeholder="Message NetSol Assistant..."></textarea>
+    <button id="sendBtn" class="circle" onclick="send()" title="Send">➤</button>
+    <button id="stopBtn" class="circle" onclick="stopReply()" title="Stop">■</button>
+  </div>
+</div>
+
+<script>
+  // ================= STATE =================
+  let convo = JSON.parse(localStorage.getItem("convo") || "[]");   // chat memory
+  let controller = null;                                            // cancels streaming
+  let recorder = null, chunks = [];                                 // voice recording
+
+  const chat = document.getElementById("chat");
+  const input = document.getElementById("input");
+  const statusEl = document.getElementById("status");
+
+  const STARTERS = [
+    { t: "Explain an API", d: "In simple words with an example", q: "What is an API? Explain simply with an example." },
+    { t: "Git basics", d: "Commands every intern needs", q: "Explain the Git commands a new intern must know." },
+    { t: "Write an email", d: "Professional, to my supervisor", q: "Write a short professional email asking my supervisor for feedback." },
+    { t: "Debug my code", d: "Paste it and I'll explain", q: "Explain what a null pointer error is and how to fix it." }
+  ];
+
+  // ================= THEME =================
+  function toggleTheme() {
+    const root = document.documentElement;
+    const next = root.dataset.theme === "dark" ? "light" : "dark";
+    root.dataset.theme = next;
+    localStorage.setItem("theme", next);
+  }
+  document.documentElement.dataset.theme = localStorage.getItem("theme") || "dark";
+
+  // ================= RENDERING =================
+  function renderMd(el, text) {
+    el.innerHTML = DOMPurify.sanitize(marked.parse(text));      // Markdown -> safe HTML
+  }
+
+  function scrollDown() { chat.scrollTop = chat.scrollHeight; }
+
+  // Builds one message row: avatar + bubble (+ copy/speak buttons for bot)
+  function addMessage(text, who) {
+    document.getElementById("welcome")?.remove();
+    const row = document.createElement("div");
+    row.className = "row " + who;
+
+    const avatar = document.createElement("div");
+    avatar.className = "avatar";
+    avatar.textContent = who === "bot" ? "✦" : "🙂";
+
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
+    const content = document.createElement("div");
+    content.className = "content";
+    bubble.appendChild(content);
+
+    if (who === "bot") {
+      if (text) renderMd(content, text);
+      const tools = document.createElement("div");
+      tools.className = "tools";
+      tools.innerHTML = '<button data-a="copy">Copy</button><button data-a="speak">🔊 Read</button>';
+      tools.onclick = e => {
+        const a = e.target.dataset.a;
+        if (a === "copy") { navigator.clipboard.writeText(content.innerText); e.target.textContent = "Copied ✓"; setTimeout(() => e.target.textContent = "Copy", 1200); }
+        if (a === "speak") { speechSynthesis.cancel(); speechSynthesis.speak(new SpeechSynthesisUtterance(content.innerText)); }
+      };
+      bubble.appendChild(tools);
+    } else {
+      content.textContent = text;                                // user text stays plain (safe)
+    }
+
+    row.append(avatar, bubble);
+    chat.appendChild(row);
+    scrollDown();
+    return content;
+  }
+
+  function showWelcome() {
+    if (convo.length) return;
+    const w = document.createElement("div");
+    w.id = "welcome";
+    w.innerHTML = '<div class="big">✦</div><h1>How can I help today?</h1><p>Pick a personality on top, or try one of these.</p><div class="cards"></div>';
+    STARTERS.forEach(s => {
+      const c = document.createElement("button");
+      c.className = "card";
+      c.innerHTML = "<b>" + s.t + "</b><span>" + s.d + "</span>";
+      c.onclick = () => { input.value = s.q; send(); };
+      w.querySelector(".cards").appendChild(c);
+    });
+    chat.appendChild(w);
+  }
+
+  function setBusy(busy) {
+    document.getElementById("sendBtn").style.display = busy ? "none" : "block";
+    document.getElementById("stopBtn").style.display = busy ? "block" : "none";
+  }
+
+  // ================= SENDING =================
+  async function send() {
+    const text = input.value.trim();
+    if (!text || controller) return;
+    input.value = ""; input.style.height = "auto";
+
+    addMessage(text, "user");
+    convo.push({ role: "user", content: text });
+
+    const botContent = addMessage("", "bot");
+    botContent.innerHTML = '<div class="dots"><span></span><span></span><span></span></div>';
+    setBusy(true);
+    controller = new AbortController();
+    let reply = "";
+
+    try {
+      const res = await fetch("/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: convo,
+          model: document.getElementById("model").value,
+          persona: document.getElementById("persona").value
+        }),
+        signal: controller.signal
+      });
+      if (!res.ok) throw new Error("Server error " + res.status);
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        reply += decoder.decode(value, { stream: true });
+        renderMd(botContent, reply);
+        scrollDown();
+      }
+    } catch (err) {
+      if (err.name === "AbortError") reply += "\n\n*(stopped)*";
+      else reply = "⚠️ Could not reach the server. Is Flask running?";
+      renderMd(botContent, reply);
+    }
+
+    if (reply) convo.push({ role: "assistant", content: reply });
+    localStorage.setItem("convo", JSON.stringify(convo));
+    controller = null;
+    setBusy(false);
+    input.focus();
+  }
+
+  function stopReply() { if (controller) controller.abort(); }
+
+  function clearChat() {
+    stopReply(); speechSynthesis.cancel();
+    convo = []; localStorage.setItem("convo", "[]");
+    chat.innerHTML = "";
+    showWelcome();
+  }
+
+  // ================= VOICE INPUT =================
+  // Flow: mic -> MediaRecorder collects audio -> POST to /transcribe -> Whisper returns text -> we send it
+  async function toggleMic() {
+    const mic = document.getElementById("micBtn");
+
+    if (recorder && recorder.state === "recording") {            // second click = stop
+      recorder.stop();
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      recorder = new MediaRecorder(stream);
+      chunks = [];
+      recorder.ondataavailable = e => chunks.push(e.data);
+
+      recorder.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop());               // release the microphone
+        mic.classList.remove("rec");
+        statusEl.textContent = "Transcribing...";
+
+        const blob = new Blob(chunks, { type: recorder.mimeType });
+        const ext = blob.type.includes("mp4") ? "mp4" : "webm";
+        const form = new FormData();
+        form.append("audio", blob, "recording." + ext);
+
+        try {
+          const res = await fetch("/transcribe", { method: "POST", body: form });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Failed");
+          input.value = data.text;
+          statusEl.textContent = "";
+          if (data.text) send();                                 // auto-send what we heard
+        } catch (err) {
+          statusEl.textContent = "Voice error: " + err.message;
+        }
+      };
+
+      recorder.start();
+      mic.classList.add("rec");
+      statusEl.textContent = "Listening... click the mic again to stop";
+    } catch (err) {
+      statusEl.textContent = "Microphone blocked. Allow access in the browser address bar.";
+    }
+  }
+
+  // ================= INPUT HANDLING =================
+  input.addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+  });
+  input.addEventListener("input", () => {
+    input.style.height = "auto";
+    input.style.height = input.scrollHeight + "px";
+  });
+
+  // ================= STARTUP =================
+  convo.forEach(m => addMessage(m.content, m.role === "user" ? "user" : "bot"));
+  showWelcome();
+</script>
+</body>
+</html>
